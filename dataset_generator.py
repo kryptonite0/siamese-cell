@@ -58,21 +58,21 @@ class RXRXDataset(torchDataset):
         :return: (tuple) (image1, image2, is_same_label)
         """
         # generate random 0-1
-        is_same_label = random.randint(0,1)
+        is_diff_label = random.randint(0,1)
         # get img_ids
         img_id1 = self.id_list[index1]
         label1 = self.label_list[index1]
-        if is_same_label:
+        if is_diff_label:
+            id_list_diff = self.id_list[self.label_list!=label1]
+            img_id2 = random.choice(id_list_diff)
+            index2 = np.where(self.id_list == img_id2)[0][0]
+            label2 = self.label_list[index2]
+        else:
             id_list_same = self.id_list[self.label_list==label1]
             img_id2 = img_id1
             while img_id2 == img_id1:
                 img_id2 = random.choice(id_list_same)
             label2 = label1
-        else:
-            id_list_diff = self.id_list[self.label_list!=label1]
-            img_id2 = random.choice(id_list_diff)
-            index2 = np.where(self.id_list == img_id2)[0][0]
-            label2 = self.label_list[index2]
             
         # load 6-channel images from .npy file
         img_path1 = get_image_path(self.basepath_data, self.original_image_size, img_id1)
@@ -92,7 +92,7 @@ class RXRXDataset(torchDataset):
             img1 = self.transform(img1)
             img2 = self.transform(img2)
         
-        return img1, img2, is_same_label, str(label1), str(label2)
+        return img1, img2, is_diff_label, str(label1), str(label2)
 
     def __len__(self):
         return len(self.id_list)
@@ -183,7 +183,7 @@ def imgMinMaxScaler(img, scale_range=(0,255), dtype='uint8'):
     return img_scaled
 
 def show_batch(loader):
-    img_batch1, img_batch2, is_same_batch, label_batch1, label_batch2 = next(iter(loader))
+    img_batch1, img_batch2, is_diff_batch, label_batch1, label_batch2 = next(iter(loader))
     print("Image batch size: {}. Label batch size: {}.".format(img_batch1.size(), len(label_batch1)))
     print("Average pixel value in batch: {:.5f}".format((img_batch1.mean() + img_batch1.mean())/2.))
     print("Stddev pixel value in batch: {:.5f}".format((img_batch1.std() + img_batch2.std())/2.))
@@ -199,10 +199,10 @@ def show_batch(loader):
                 img2 = img_batch2[k].permute(1,2,0).data.cpu().numpy()
                 img1, img2 = imgMinMaxScaler(img1), imgMinMaxScaler(img2)
                 label1, label2 = label_batch1[k], label_batch2[k]
-                is_same = is_same_batch[k]
+                is_diff = is_diff_batch[k]
                 axs[2*i,j].imshow(rio.convert_tensor_to_rgb(img1))
                 axs[2*i+1,j].imshow(rio.convert_tensor_to_rgb(img2))
-                color = "green" if is_same else "red"
+                color = "red" if is_diff else "green"
                 axs[2*i,j].set_title(label1, color=color)
                 axs[2*i+1,j].set_title(label2, color=color)
     
