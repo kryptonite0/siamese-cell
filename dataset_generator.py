@@ -69,9 +69,17 @@ class RXRXDataset(torchDataset):
             label2 = self.label_list[index2]
         else:
             id_list_same = self.id_list[self.label_list==label1]
-            img_id2 = img_id1
-            while img_id2 == img_id1:
-                img_id2 = random.choice(id_list_same)
+            
+            # this ensures the pair is never composed by the same image twice
+            # use if augmentation is not active
+            # img_id2 = img_id1
+            # while img_id2 == img_id1:
+            #     img_id2 = random.choice(id_list_same)
+            
+            # in a few cases, the pair will be the same image twice
+            # but augmentation will fix this
+            img_id2 = random.choice(id_list_same)
+            
             label2 = label1
             
         # load 6-channel images from .npy file
