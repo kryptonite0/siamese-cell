@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import functional as F
 
 # import custom libs
-from utils import save_checkpoint, RunningAverage, ContrastiveLoss, plot_histories
+from utils import *
 import settings_model
         
 def train(model, dataloader, optimizer, loss_fn, threshold, num_steps, 
@@ -155,8 +155,16 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
         fig, ax = plt.subplots()
         ax.hist(euclidean_distance[is_diff==1], color="r", bins=200, alpha=0.5)
         ax.hist(euclidean_distance[is_diff==0], color="g", bins=200, alpha=0.5)
-        # plt.xlim([-3, 3])
         plt.savefig(os.path.join(settings_model.root_path, "tmp", "eucl_dist.png"), dpi=150)
+        print("- Debug threshold")
+        print("  Euclidean distance in same pairs:\n    {:.5f} +- {:.5f}"\
+              .format(euclidean_distance[is_diff==0].mean(), 
+                      euclidean_distance[is_diff==0].std() / len(euclidean_distance[is_diff==0])))
+        print("  Euclidean distance in different pairs:\n    {:.5f} +- {:.5f}"\
+              .format(euclidean_distance[is_diff==1].mean(), 
+                      euclidean_distance[is_diff==1].std() / len(euclidean_distance[is_diff==1])))
+        print("  Discrepancy:\n    {:.5f}"\
+              .format(euclidean_distance[is_diff==0].mean() - euclidean_distance[is_diff==1].mean()))
 
     # log validation summary
     metrics_valid = {'loss' : loss_avg(),
@@ -344,7 +352,7 @@ def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_
             print("- Found new best loss: {:.7f}".format(best_valid_loss))
         if is_best_acc:
             best_valid_acc = metrics_valid["acc"]
-            print("- Found new best iou: {:.7f}".format(best_valid_acc))
+            print("- Found new best acc: {:.7f}".format(best_valid_acc))
             
         # save checkpoints
         print("Saving checkpoints...")
@@ -373,5 +381,8 @@ def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_
                      "acc valid" : acc_valid_hist
                     }
         plot_histories(histories, output_dir)
+        
+        # send email alert
+        epoch_email_alert(output_dir)
 
         print('Epoch run in {:.2f} minutes'.format((time.time()-start)/60.))

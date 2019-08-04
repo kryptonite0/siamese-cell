@@ -25,11 +25,11 @@ def main():
     torch.manual_seed(seed)
     # define training parameters
     verbose = False
-    model = siamese_resnet50(pretrained=True).cuda()
+    model = siamese_resnet18(pretrained=True).cuda()
     loss_fn = ContrastiveLoss()
-    lr_init = 1.e-5
+    lr_init = 3.e-4
     threshold = 0.5
-    num_epochs = 2
+    num_epochs = 100
     num_steps_train = int(len(loaders["train"]))
     num_steps_valid = int(len(loaders["valid"]))
     output_dir = os.path.join(settings_model.root_path, "models", "siamese-cell",

@@ -2,9 +2,16 @@ import os
 import torch
 import shutil
 from matplotlib import pyplot as plt
+import email, smtplib, ssl
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 import torch
 import torch.nn.functional as F
+
+import settings_model
 
 class ContrastiveLoss(torch.nn.Module):
     """
@@ -84,3 +91,70 @@ def plot_histories(histories, output_dir):
              color='g', label='acc valid')
     plt.legend()
     plt.savefig(os.path.join(output_dir, "acc_history.png"), dpi=150)
+
+def get_email_credentials():
+    fpath = os.path.join(settings_model.root_path, ".email_alert.login")
+    
+    if os.path.exists(fpath):
+        with open(fpath) as f:
+            lines = f.readlines()
+            sender_email = lines[0].replace("\n", "")
+            password = lines[1].replace("\n", "")
+            receiver_email = lines[2].replace("\n", "")
+    else:
+        with open(fpath, "w") as f:
+            sender_email = input("Input sender email:")
+            password = input("Input sender password:")
+            receiver_email = input("Input receiver email:")
+            f.write(f"{sender_email}\n{password}\n{receiver_email}")
+            
+    return sender_email, password, receiver_email
+    
+def epoch_email_alert(output_dir):
+    port = 465
+    sender_email, password, receiver_email = get_email_credentials()
+
+    subject = "Recursion Kaggle model: new epoch completed!"
+    body = "This is an email with attachment sent from Python."
+
+    # Create a multipart message and set headers
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["Subject"] = subject
+    message["Bcc"] = receiver_email  # Recommended for mass emails
+
+    # Add body to email
+    message.attach(MIMEText(body, "plain"))
+
+    attachment1_path = os.path.join(output_dir, "loss_history.png")
+    attachment2_path = os.path.join(output_dir, "acc_history.png")
+    attachment3_path = os.path.join(settings_model.root_path, "tmp", "eucl_dist.png")
+    
+    for attachment_path in [attachment1_path, attachment2_path, attachment3_path]:
+        # Open PDF file in binary mode
+        with open(attachment_path, "rb") as attachment:
+            # Add file as application/octet-stream
+            # Email client can usually download this automatically as attachment
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(attachment.read())
+
+        # Encode file in ASCII characters to send by email    
+        encoders.encode_base64(part)
+
+        # Add header as key/value pair to attachment part
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename= {attachment_path}",
+        )
+
+        # Add attachment to message and convert message to string
+        message.attach(part)
+        text = message.as_string()
+
+    # Log in to server using secure context and send email
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(sender_email, password)
+        server.sendmail(sender_email, receiver_email, text)        
+
+        
