@@ -10,25 +10,28 @@ from email.mime.text import MIMEText
 
 import torch
 import torch.nn.functional as F
+# from torch.nn.modules import CosineSimilarity
 
 import settings_model
 
 class ContrastiveLoss(torch.nn.Module):
     """
-    Contrastive loss function.
-    Based on: http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
+    Contrastive loss
+    Takes embeddings of two samples and a target label == 1 
+    if samples are from the same class and label == 0 otherwise
     """
 
     def __init__(self, margin=2.0):
-        super().__init__()
+        super(ContrastiveLoss, self).__init__()
         self.margin = margin
+        self.eps = 1e-9
 
-    def forward(self, output1, output2, is_diff):
-        euclidean_distance = F.pairwise_distance(output1, output2, keepdim = True)
-        loss_contrastive = torch.mean((1-is_diff) * torch.pow(euclidean_distance, 2) +
-                                      (is_diff) * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
-
-        return loss_contrastive
+    def forward(self, output1, output2, is_diff, size_average=True):
+        is_same = 1 - is_diff
+        distances = (output2 - output1).pow(2).sum(1)  # squared distances
+        loss = 0.5 * (is_same.float() * distances +
+                        (1 + -1 * is_same).float() * F.relu(self.margin - (distances + self.eps).sqrt()).pow(2))
+        return loss.mean() if size_average else loss.sum()
 
 def save_checkpoint(state, is_best, metric_name, metric_value, model_dir):
     """ Saves model weights and training parameters as 'last.pth.tar'. 
@@ -128,7 +131,7 @@ def epoch_email_alert(output_dir):
 
     attachment1_path = os.path.join(output_dir, "loss_history.png")
     attachment2_path = os.path.join(output_dir, "acc_history.png")
-    attachment3_path = os.path.join(settings_model.root_path, "tmp", "eucl_dist.png")
+    attachment3_path = os.path.join(settings_model.root_path, "tmp", "dist.png")
     
     for attachment_path in [attachment1_path, attachment2_path, attachment3_path]:
         # Open PDF file in binary mode

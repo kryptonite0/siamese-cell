@@ -57,13 +57,13 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
         loss_avg_hist_ep.append(loss_avg())
         # evaluate metrics only once in a while
         if i%save_summary_steps == 0:
-            # calculate euclidean distance
-            euclidean_distance = F.pairwise_distance(output_batch1.detach(), 
-                output_batch2.detach(), keepdim=True).view(-1).data.cpu().numpy()
+            # calculate distance
+            distance = (output_batch1.detach() - output_batch2.detach()).pow(2).sum(1)
+            distance = distance.data.cpu().numpy()
             # get ground truth
             is_diff = is_diff_batch.data.cpu().numpy()
             # extract predictions
-            prediction = (euclidean_distance > threshold).astype("int")
+            prediction = (distance > threshold).astype("int")
             # calculate accuracy
             acc = sum(prediction == is_diff) / len(prediction)
             # update accuracy running average
@@ -112,7 +112,7 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
     # iterate over batches    
     print(f'- Validating on {num_steps} batches of {batch_size} images each.')
     with torch.no_grad():
-        euclidean_distance_list = []
+        distance_list = []
         is_diff_list = []
         for i, data in enumerate(dataloader):
             # break loop after num_steps batches
@@ -129,42 +129,39 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
             loss = loss_fn(output_batch1, output_batch2, is_diff_batch)
             # update loss running average
             loss_avg.update(loss.item())
-            # calculate euclidean distance
-            euclidean_distance = F.pairwise_distance(output_batch1.detach(), 
-                output_batch2.detach(), keepdim=True).view(-1).data.cpu().numpy()
+            # calculate distance
+            distance = (output_batch1.detach() - output_batch2.detach()).pow(2).sum(1)
+            distance = distance.data.cpu().numpy()
             # get ground truth
             is_diff = is_diff_batch.data.cpu().numpy()
             # extract predictions
-            prediction = (euclidean_distance > threshold).astype("int")
+            prediction = (distance > threshold).astype("int")
             # calculate accuracy
             acc = sum(prediction == is_diff) / len(prediction)
             # update accuracy running average
             acc_avg.update(acc)
             
             # debug threshold
-            euclidean_distance_list += euclidean_distance.tolist()
+            distance_list += distance.tolist()
             is_diff_list += is_diff.tolist()
             
-            if verbose:    
-                print('    Validation batch [{}/{}] done'.format(i, num_steps))
-        
         # debug threshold
         from matplotlib import pyplot as plt
-        euclidean_distance = np.array(euclidean_distance_list)
+        distance = np.array(distance_list)
         is_diff = np.array(is_diff_list)
         fig, ax = plt.subplots()
-        ax.hist(euclidean_distance[is_diff==1], color="r", bins=200, alpha=0.5)
-        ax.hist(euclidean_distance[is_diff==0], color="g", bins=200, alpha=0.5)
-        plt.savefig(os.path.join(settings_model.root_path, "tmp", "eucl_dist.png"), dpi=150)
+        ax.hist(distance[is_diff==1], color="r", bins=200, alpha=0.5)
+        ax.hist(distance[is_diff==0], color="g", bins=200, alpha=0.5)
+        plt.savefig(os.path.join(settings_model.root_path, "tmp", "dist.png"), dpi=150)
         print("- Debug threshold")
-        print("  Euclidean distance in same pairs:\n    {:.5f} +- {:.5f}"\
-              .format(euclidean_distance[is_diff==0].mean(), 
-                      euclidean_distance[is_diff==0].std() / len(euclidean_distance[is_diff==0])))
-        print("  Euclidean distance in different pairs:\n    {:.5f} +- {:.5f}"\
-              .format(euclidean_distance[is_diff==1].mean(), 
-                      euclidean_distance[is_diff==1].std() / len(euclidean_distance[is_diff==1])))
+        print("  Distance in same pairs:\n    {:.5f} +- {:.5f}"\
+              .format(distance[is_diff==0].mean(), 
+                      distance[is_diff==0].std() / len(distance[is_diff==0])))
+        print("  Distance in different pairs:\n    {:.5f} +- {:.5f}"\
+              .format(distance[is_diff==1].mean(), 
+                      distance[is_diff==1].std() / len(distance[is_diff==1])))
         print("  Discrepancy:\n    {:.5f}"\
-              .format(euclidean_distance[is_diff==0].mean() - euclidean_distance[is_diff==1].mean()))
+              .format(-distance[is_diff==0].mean() + distance[is_diff==1].mean()))
 
     # log validation summary
     metrics_valid = {'loss' : loss_avg(),

@@ -8,7 +8,10 @@ import settings_model
 import preprocess_data
 from dataset_generator import create_datasets_and_loaders
 from train_predict import *
-from architecture import siamese_resnet18, siamese_resnet34, siamese_resnet50, siamese_resnet101
+from architectures.siamese_resnet import siamese_resnet18, siamese_resnet50, siamese_resnet101
+from architectures.siamese_efficientnet import SiameseEfficientNet
+
+# from utils import ContrastiveLoss, CosineSimilarityLoss
 
 sys.path.append(os.path.join(settings_model.root_path, "rxrx1-utils"))
 from rxrx import io as rio
@@ -24,14 +27,17 @@ def main():
     seed = 42
     torch.manual_seed(seed)
     # define training parameters
-    verbose = False
+    verbose = True
     model = siamese_resnet18(pretrained=True).cuda()
-    loss_fn = ContrastiveLoss()
+    # model = siamese_resnet50(pretrained=True).cuda()
+    # model = SiameseEfficientNet.from_pretrained('efficientnet-b0').cuda()
+    # loss_fn = ContrastiveLoss(margin=2.)
+    loss_fn = CosineSimilarityLoss(margin=0.)
     lr_init = 3.e-4
     threshold = 0.5
     num_epochs = 100
-    num_steps_train = int(len(loaders["train"]))
-    num_steps_valid = int(len(loaders["valid"]))
+    num_steps_train = 100#int(len(loaders["train"]))
+    num_steps_valid = 100#int(len(loaders["valid"]))
     output_dir = os.path.join(settings_model.root_path, "models", "siamese-cell",
                               datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
     print("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n")
