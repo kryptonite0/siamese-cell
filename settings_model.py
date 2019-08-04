@@ -1,9 +1,11 @@
 import os
 
-root_path = "/jet/prs/workspace/"
+root_path = os.path.join("/", "jet", "prs", "workspace")
 
-basepath_data = root_path +"data/"
+basepath_data = os.path.join(root_path, "data")
 
-batch_size = 32
+original_image_size, batch_size = 128, 64
 
-original_image_size = 128
+
+
+

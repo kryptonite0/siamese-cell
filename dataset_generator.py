@@ -14,16 +14,18 @@ import sys
 sys.path.append("/jet/prs/workspace/rxrx1-utils")
 from rxrx import io as rio
 
+from albumentations import Compose, RandomCrop, Rotate, HorizontalFlip, VerticalFlip, Resize
+from albumentations.pytorch import ToTensor
+
 def get_image_path(basepath_data, original_image_size, img_id):
-    image_path_train = basepath_data + f"resized_{original_image_size}/" + "train/" + f"{img_id}.npy"
-    if os.path.exists(image_path_train):
-        return image_path_train
-    else:
-        image_path_test = basepath_data + f"resized_{original_image_size}/" + "test/" + f"{img_id}.npy"
-        if os.path.exists(image_path_test):
-            return image_path_test
-        else:
-            raise RuntimeError(f"Image path {image_path_train} or {image_path_test} not found!")
+    dataset = img_id.split("_")[0]
+    img_id = "_".join(img_id.split("_")[1:])
+    image_path = os.path.join(basepath_data, f"resized_{original_image_size}", 
+                              f"{dataset}", f"{img_id}.npy")
+    if not os.path.exists(image_path):
+        raise RuntimeError(f"Image {image_path} not found!")
+    
+    return image_path
 
 class RXRXDataset(torchDataset):
     """
@@ -88,18 +90,18 @@ class RXRXDataset(torchDataset):
         img1 = np.load(img_path1).astype('float64')
         img2 = np.load(img_path2).astype('float64')
         # get normalization coefficients for its experiment
-        exp1, exp2 = img_id1.split("_")[0], img_id2.split("_")[0]
+        exp1, exp2 = img_id1.split("_")[1], img_id2.split("_")[1]
         norm1, norm2 = self.exp_norm_dict[exp1], self.exp_norm_dict[exp2]
         # normalize
         img1 -= norm1["median"] 
         img1 /= norm1["std"]
         img2 -= norm2["median"] 
         img2 /= norm2["std"]
-        
+        # apply augmentation
         if self.transform:
-            img1 = self.transform(img1)
-            img2 = self.transform(img2)
-        
+            img1 = self.transform(image=img1)['image']
+            img2 = self.transform(image=img2)['image']
+                
         return img1, img2, is_diff_label, str(label1), str(label2)
 
     def __len__(self):
@@ -107,9 +109,16 @@ class RXRXDataset(torchDataset):
 
 def create_datasets_and_loaders(data, batch_size, basepath_data, original_image_size):
     
-    transform_train = tv.transforms.Compose([tv.transforms.ToTensor()])
-    transform_valid = tv.transforms.Compose([tv.transforms.ToTensor()])
-    transform_test = tv.transforms.Compose([tv.transforms.ToTensor()])
+    transform_train = Compose([HorizontalFlip(p=0.5),
+                               VerticalFlip(p=0.5),
+                               Rotate(limit=180, p=1),
+                               RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
+                               Resize(original_image_size, original_image_size),
+                               ToTensor()
+                            ])
+
+    transform_valid = Compose([ToTensor()])
+    transform_test = Compose([ToTensor()])
     
     # create datasets
     dataset_train = RXRXDataset(id_list=data["ids_train"], label_list=data["labels_train"],

@@ -9,7 +9,7 @@ def rxrx_all():
     # load metadata
     df = rio.combine_metadata().reset_index()
     # create img_id column to match image names
-    df["img_id"] = df["id_code"] + "_s" + df["site"].astype("str")
+    df["img_id"] = df["dataset"] + "_" + df["id_code"] + "_s" + df["site"].astype("str")
     print("Metadata shape:", df.shape)
         
     # split metadata and shuffle with sample frac=1

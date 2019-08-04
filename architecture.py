@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
-# from .utils import load_state_dict_from_url
+
+try:
+    from torch.hub import load_state_dict_from_url
+except ImportError:
+    from torch.utils.model_zoo import load_url as load_state_dict_from_url
 
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -218,9 +222,16 @@ class SiameseResNet(nn.Module):
 def _siamese_resnet(arch, block, layers, pretrained, progress, **kwargs):
     model = SiameseResNet(block, layers, **kwargs)
     if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
-        model.load_state_dict(state_dict)
+        pretrained_dict = load_state_dict_from_url(model_urls[arch],
+                                                   progress=progress)
+        # replace pretrained weights with random model initialization
+        # if network layers are different
+        model_dict = model.state_dict()
+        for key in ["conv1.weight", "fc.weight", "fc.bias"]:
+            pretrained_dict[key] = model_dict[key]
+        model.load_state_dict(pretrained_dict)
+        print("=> loaded Imagenets pretrained weights (where possible)")
+        
     return model
 
 
