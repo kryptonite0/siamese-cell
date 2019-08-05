@@ -58,12 +58,15 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
         # evaluate metrics only once in a while
         if i%save_summary_steps == 0:
             # calculate distance
-            distance = (output_batch1.detach() - output_batch2.detach()).pow(2).sum(1)
+            cos_f = nn.CosineSimilarity(dim=1, eps=1e-6)
+            distance = cos_f(output_batch1.detach(), output_batch2.detach())
             distance = distance.data.cpu().numpy()
+            # distance = (output_batch1.detach() - output_batch2.detach()).pow(2).sum(1)
+            # distance = distance.data.cpu().numpy()
             # get ground truth
             is_diff = is_diff_batch.data.cpu().numpy()
             # extract predictions
-            prediction = (distance > threshold).astype("int")
+            prediction = (distance < threshold).astype("int")
             # calculate accuracy
             acc = sum(prediction == is_diff) / len(prediction)
             # update accuracy running average
@@ -130,12 +133,13 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
             # update loss running average
             loss_avg.update(loss.item())
             # calculate distance
-            distance = (output_batch1.detach() - output_batch2.detach()).pow(2).sum(1)
+            cos_f = nn.CosineSimilarity(dim=1, eps=1e-6)
+            distance = cos_f(output_batch1.detach(), output_batch2.detach())
             distance = distance.data.cpu().numpy()
             # get ground truth
             is_diff = is_diff_batch.data.cpu().numpy()
             # extract predictions
-            prediction = (distance > threshold).astype("int")
+            prediction = (distance < threshold).astype("int")
             # calculate accuracy
             acc = sum(prediction == is_diff) / len(prediction)
             # update accuracy running average

@@ -10,15 +10,32 @@ from email.mime.text import MIMEText
 
 import torch
 import torch.nn.functional as F
-# from torch.nn.modules import CosineSimilarity
+from torch.nn import CosineEmbeddingLoss
 
 import settings_model
 
-class ContrastiveLoss(torch.nn.Module):
+class CosineSimilarityLoss(torch.nn.Module):
+    """ Cosine similarity loss based on pytorch 
+        https://pytorch.org/docs/stable/nn.html#torch.nn.CosineEmbeddingLoss
+        Takes embedding of two samples and a target label = 1 
+        if the samples are from the same class otherwise -1.
     """
-    Contrastive loss
-    Takes embeddings of two samples and a target label == 1 
-    if samples are from the same class and label == 0 otherwise
+
+    def __init__(self, margin=0.5, reduction="mean"):
+        super(CosineSimilarityLoss, self).__init__()
+        self.margin = margin
+        self.reduction = reduction
+        
+    def forward(self, output1, output2, is_diff):
+        target = (1. - 2. * is_diff).float() # map [0,1] -> [1, -1]
+        cos = CosineEmbeddingLoss(margin=self.margin, reduction=self.reduction)
+        
+        return cos(output1, output2, target)
+    
+class ContrastiveLoss(torch.nn.Module):
+    """ Contrastive loss
+        Takes embeddings of two samples and a target label == 1 
+        if samples are from the same class and label == 0 otherwise
     """
 
     def __init__(self, margin=2.0):
