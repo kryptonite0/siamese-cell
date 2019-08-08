@@ -100,7 +100,7 @@ class SiameseEfficientNet(nn.Module):
         model = EfficientNet.from_pretrained('efficientnet-b0')
     """
 
-    def __init__(self, blocks_args=None, global_params=None, in_channels=6, embedding_size=512):
+    def __init__(self, blocks_args=None, global_params=None, in_channels=6, embedding_size=128):
         super().__init__()
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
@@ -186,9 +186,10 @@ class SiameseEfficientNet(nn.Module):
         return out1, out2
     
     @classmethod
-    def from_name(cls, model_name, override_params={"dropout_rate" : 0.5}):
+    def from_name(cls, model_name, override_params={"dropout_rate" : 0.2}):
         cls._check_model_name_is_valid(model_name)
         blocks_args, global_params = get_model_params(model_name, override_params)
+        print(global_params)
         return SiameseEfficientNet(blocks_args, global_params)
 
     @classmethod

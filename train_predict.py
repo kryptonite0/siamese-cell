@@ -5,6 +5,8 @@ import numpy as np
 import copy
 import os
 import shutil
+from tqdm import tqdm
+import pandas as pd
 
 import torch
 from torch import nn
@@ -18,8 +20,6 @@ import settings_model
         
 def train(model, dataloader, optimizer, loss_fn, threshold, num_steps, 
           batch_size, verbose=False, save_summary_steps=5, seed=42):
-    # fix random seed
-    torch.manual_seed(seed)
     # set model to training mode
     model.train()    
     # create running averages
@@ -37,6 +37,8 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
         # break loop after num_steps batches
         if i > num_steps:
             break
+        # filter soft/hard pairs
+        data = filter_soft_hard_pairs(model, data)
         # extract variables    
         img_batch1, img_batch2, is_diff_batch, label_batch1, label_batch2 = data
         img_batch1 = img_batch1.type(torch.float32).cuda()
@@ -57,16 +59,14 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
         loss_avg_hist_ep.append(loss_avg())
         # evaluate metrics only once in a while
         if i%save_summary_steps == 0:
-            # calculate distance
+            # calculate similarity
             cos_f = nn.CosineSimilarity(dim=1, eps=1e-6)
-            distance = cos_f(output_batch1.detach(), output_batch2.detach())
-            distance = distance.data.cpu().numpy()
-            # distance = (output_batch1.detach() - output_batch2.detach()).pow(2).sum(1)
-            # distance = distance.data.cpu().numpy()
+            similarity = cos_f(output_batch1.detach(), output_batch2.detach())
+            similarity = similarity.data.cpu().numpy()
             # get ground truth
             is_diff = is_diff_batch.data.cpu().numpy()
             # extract predictions
-            prediction = (distance < threshold).astype("int")
+            prediction = (similarity < threshold).astype("int")
             # calculate accuracy
             acc = sum(prediction == is_diff) / len(prediction)
             # update accuracy running average
@@ -85,7 +85,7 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
                 print('    It [{}/{}] '.\
                       format(i, num_steps) + summary_batch_string)
             # reset partial clock
-            start = time.time() 
+            start = time.time()
 
     # log epoch summary
     summary_epoch_string = "    avg loss: {:05.7f}\n".format(loss_avg())
@@ -103,8 +103,6 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
 
 def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size, 
              verbose=False, seed=42):
-    # fix random seed
-    torch.manual_seed(seed)
     # set model to evaluation mode
     model.eval()
     # create running averages
@@ -121,6 +119,8 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
             # break loop after num_steps batches
             if i > num_steps:
                 break
+            # filter soft/hard pairs
+            data = filter_soft_hard_pairs(model, data)
             # extract variables    
             img_batch1, img_batch2, is_diff_batch, label_batch1, label_batch2 = data
             img_batch1 = img_batch1.type(torch.float32).cuda()
@@ -132,14 +132,14 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
             loss = loss_fn(output_batch1, output_batch2, is_diff_batch)
             # update loss running average
             loss_avg.update(loss.item())
-            # calculate distance
+            # calculate similarity
             cos_f = nn.CosineSimilarity(dim=1, eps=1e-6)
-            distance = cos_f(output_batch1.detach(), output_batch2.detach())
-            distance = distance.data.cpu().numpy()
+            similarity = cos_f(output_batch1.detach(), output_batch2.detach())
+            similarity = similarity.data.cpu().numpy()
             # get ground truth
             is_diff = is_diff_batch.data.cpu().numpy()
             # extract predictions
-            prediction = (distance < threshold).astype("int")
+            prediction = (similarity < threshold).astype("int")
             # calculate accuracy
             acc = sum(prediction == is_diff) / len(prediction)
             # update accuracy running average
@@ -154,8 +154,8 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
         distance = np.array(distance_list)
         is_diff = np.array(is_diff_list)
         fig, ax = plt.subplots()
-        ax.hist(distance[is_diff==1], color="r", bins=200, alpha=0.5)
-        ax.hist(distance[is_diff==0], color="g", bins=200, alpha=0.5)
+        ax.hist(distance[is_diff==1], color="r", bins=len(distance)//20, alpha=0.5)
+        ax.hist(distance[is_diff==0], color="g", bins=len(distance)//20, alpha=0.5)
         plt.savefig(os.path.join(settings_model.root_path, "tmp", "dist.png"), dpi=150)
         print("- Debug threshold")
         print("  Distance in same pairs:\n    {:.5f} +- {:.5f}"\
@@ -177,135 +177,117 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
 
     return metrics_valid
 
-# def predict_valid(model, dataloader): 
-
-#     # set model to evaluation mode
-#     model.eval()
+def predict(model, dataloader_train, dataloader_predict, mode): 
     
-#     zslices = []
-#     ztargets = []
-#     zpreds = []
-#     with torch.no_grad():
-#         for i, (input_batch, labels_batch) in enumerate(dataloader):
-#             print('Predicting batch {} / {}.'.format(i+1, len(dataloader)))
-#             # Send torch tensor to cuda
-#             input_batch = input_batch.cuda(async=True)
-#             # compute output
-#             output_batch = model(input_batch.cuda())
-#             # sigmoid the output
-#             sig = nn.Sigmoid().cuda()
-#             output_batch = sig(output_batch)
-#             # extract numpy arrays
-#             input_batch = input_batch.data.cpu().numpy()
-#             labels_batch = labels_batch.data.cpu().numpy()
-#             output_batch = output_batch.data.cpu().numpy()
-#             # iterate and append to lists
-#             for img, trg, pred in zip(input_batch, labels_batch, output_batch):
-#                 zslices.append(img[1]) # 2nd channel corresponds to middle zslice
-#                 ztargets.append(trg[0]) # channel 0 (there's only one)
-#                 zpreds.append(pred[0]) # channel 0 (there's only one)
-#     # save into dataframe
-#     df_pred = pd.DataFrame(data={"zslice" : zslices, 
-#                                  "ztarget" : ztargets, 
-#                                  "zpred" : zpreds})        
-#     return df_pred
+    # set model to evaluation mode
+    model.eval()
+    with torch.no_grad():
+        # iterate over dataloader_train
+        for i, data in tqdm(enumerate(dataloader_train), total=len(dataloader_train)):
+            # extract variables    
+            img_batch, label_batch = data
+            img_batch = img_batch.type(torch.float32).cuda()
+            # calculate embedding for each sample
+            output_batch = model.forward_once(img_batch)
+            # concatenate embeddings (and labels) in a single tensor
+            if i == 0:
+                embeddings_train = output_batch
+                labels_train = label_batch
+            else:
+                embeddings_train = torch.cat((embeddings_train, output_batch), dim=0, out=None)
+                labels_train += label_batch
+        labels_train = np.array(labels_train)        
+        
+        # define similarity function
+        cos_f = nn.CosineSimilarity(dim=1, eps=1e-6)
+        # init accuracy
+        accuracy1, accuracy2 = 0., 0.
+        # iterate over all samples to predict
+        for i, data in tqdm(enumerate(dataloader_predict), total=len(dataloader_predict)):
+            # extract variables    
+            img_batch, label_batch = data
+            img_batch = img_batch.type(torch.float32).cuda()
+            # calculate embedding for each sample
+            output_batch = model.forward_once(img_batch)
+            # compare against all training embeddings
+            for embedding_predict, true_label in zip(output_batch, label_batch):
+                # calculate cosine similarity
+                embedding_predict_mul = embedding_predict.repeat(embeddings_train.size()[0], 1)
+                similarities = cos_f(embedding_predict_mul, embeddings_train).data.cpu().numpy()
+                pred_label = labels_train[np.argmax(similarities)]
+                accuracy1 += (str(pred_label)==str(true_label)) / float(len(dataloader_predict.dataset))
+                df = pd.DataFrame(data={"labels" : labels_train, "similarities" : similarities})
+                df_scores = df.head(200).groupby("labels")["similarities"].mean().sort_values(ascending=False)
+                pred_label, score = df_scores.index[0], df_scores.ix[0]
+                accuracy2 += (str(pred_label)==str(true_label)) / float(len(dataloader_predict.dataset))
 
-# def predict_test(model, dataloader, output_dir, apply_lung_mask, sample_name="test"): 
-#     # set model to evaluation mode
-#     model.eval()
-#     with torch.no_grad():
-#         start = time.time()
-#         for i, (input_batch, mask_batch, img_id_batch) in enumerate(dataloader):
-#             # Send torch tensor to cuda
-#             input_batch = input_batch.cuda(async=True)
-#             # compute output
-#             output_batch = model(input_batch)
-#             sig = nn.Sigmoid().cuda()
-#             output_batch = sig(output_batch)
-#             # extract numpy arrays
-#             output_batch = output_batch.data.cpu().numpy()
-#             mask_batch = mask_batch.numpy()
-#             # save to png
-#             for img_id, output, mask in zip(img_id_batch, output_batch, mask_batch):
-#                 seriesuid = img_id.split("_")[0]
-#                 slice_n = img_id.split("_")[1]
-#                 ct_pred_dir = os.path.join(output_dir, f"{sample_name}_predictions", seriesuid)
-#                 if not os.path.exists(ct_pred_dir):
-#                     os.makedirs(ct_pred_dir, exist_ok=True)
-#                 zpred = output[0]
-#                 if apply_lung_mask:
-#                     zmask = mask[0]
-#                     zpred[zmask==0.] = 0.
-#                 cv2.imwrite(os.path.join(ct_pred_dir, "zpred_" + str(slice_n).rjust(4, '0') + ".png"), 
-#                             zpred * 255)
-#             print('Predicted batch {} / {} in {:.1f} seconds.'\
-#                   .format(i+1, len(dataloader), time.time() - start))
-#             start = time.time()
+        print("- Accuracy (method 2) at test time:", accuracy1)
+        print("- Accuracy (method 2) at test time:", accuracy2)
 
-# def predict_scan_for_production(model, dataloader, output_dir, apply_lung_mask):
-#     # create empty prediction cube
-#     vxl_array_pred = []
-#     # set model to evaluation mode
-#     model.eval()
-#     with torch.no_grad():
-#         start = time.time()
-#         for i, (input_batch, mask_batch, img_id_batch) in enumerate(dataloader):
-#             # Send torch tensor to cuda
-#             input_batch = input_batch.cuda(async=True)
-#             # compute output
-#             output_batch = model(input_batch)
-#             sig = nn.Sigmoid().cuda()
-#             output_batch = sig(output_batch)
-#             # extract numpy arrays
-#             output_batch = output_batch.data.cpu().numpy()
-#             mask_batch = mask_batch.numpy()
-#             # save to png
-#             for img_id, output, mask in zip(img_id_batch, output_batch, mask_batch):
-#                 seriesuid = img_id.split("_")[0]
-#                 slice_n = img_id.split("_")[1]
-#                 zpred = output[0]
-#                 if apply_lung_mask:
-#                     zmask = mask[0]
-#                     # dilate mask to include lung borders
-#                     zmask = binary_dilation(zmask, iterations=3)
-#                     zpred[zmask==0.] = 0.
-#                 # append prediction slice to cube
-#                 vxl_array_pred.append(zpred)
-#             print('Predicted batch {} / {} in {:.1f} seconds.'\
-#                   .format(i+1, len(dataloader), time.time() - start))
-#             start = time.time()
+def filter_soft_hard_pairs(model, data):
+    start = time.time()
+    # set model to evaluation mode
+    model.eval()
+    with torch.no_grad():
+        cos_f = nn.CosineSimilarity(dim=1, eps=1e-6)
+        # extract variables    
+        img_batch1, img_batch2, label_batch = data
+        # initialize final tensors
+        img_batch1_sh = []
+        img_batch2_sh = []
+        label_batch1_sh = []
+        label_batch2_sh = []
+        batch_size = img_batch1.size()[0]
+        for i in range(batch_size):
+            img = img_batch1[i]
+            lbl = label_batch[i]
+            # append positive pair (not the softest)
+            img_batch1_sh.append(img)
+            img_batch2_sh.append(img_batch2[i])
+            label_batch1_sh.append(lbl)
+            label_batch2_sh.append(lbl)
+            # find hardest pair among the rest of batch2
+            img_mul = torch.stack(batch_size * [img])
+            # lbl_mul = batch_size * [lbl]
+            out_mul, out_batch2 = model(img_mul.type(torch.float32).cuda(), 
+                                        img_batch2.type(torch.float32).cuda())
+            # compute cosine similarity
+            similarity = cos_f(out_mul, out_batch2).data.cpu().numpy()
+            # sort indices by similarity
+            sort_idx = np.argsort(similarity)
+            # find hardest pair        
+            for idx in sort_idx[::-1]:
+                if lbl != label_batch[idx]:
+                    img_batch1_sh.append(img)
+                    img_batch2_sh.append(img_batch2[idx])
+                    label_batch1_sh.append(lbl)
+                    label_batch2_sh.append(label_batch[idx])
+                    break
+
+        img_batch1_sh = torch.stack(img_batch1_sh)
+        img_batch2_sh = torch.stack(img_batch2_sh)
+        is_diff_batch_sh = torch.tensor((np.array(label_batch1_sh) == np.array(label_batch2_sh)))
             
-#         return np.asarray(vxl_array_pred)
+        data = img_batch1_sh, img_batch2_sh, is_diff_batch_sh, label_batch1_sh, label_batch2_sh
     
-def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_fn, threshold,
+    # print('  Soft/hard selection run in {:.2f} seconds.'.format((time.time()-start)))
+        
+    return data
+
+    
+def train_and_evaluate(model, dataloader_train_siam, dataloader_valid_siam, 
+                       dataloader_train_pred, dataloader_valid_pred, 
+                       lr_init, loss_fn, threshold,
                        num_epochs, num_steps_train, num_steps_valid, 
                        batch_size, output_dir, verbose=False, restore_file=None, seed=42):
-    # fix random seed
-    torch.manual_seed(seed)
-    
-    # # load pretrained weights as initial condition
-    # if restore_file is not None:
-    #     # reload densenet weights from restore_file if specified
-    #     print("=> loading checkpoint {}".format(restore_file))
-    #     checkpoint = torch.load(restore_file)
-    #     # pattern addresses this issue https://github.com/KaiyangZhou/deep-person-reid/issues/23
-    #     pattern = re.compile(
-    #         r'^(.*denselayer\d+\.(?:norm|relu|conv))\.((?:[12])\.(?:weight|bias|running_mean|running_var))$')
-    #     pretrained_dict = checkpoint['state_dict']
-    #     for key in list(pretrained_dict.keys()):
-    #         res = pattern.match(key)
-    #         if res:
-    #             new_key = res.group(1) + res.group(2)
-    #             pretrained_dict[new_key] = pretrained_dict[key]
-    #             del pretrained_dict[key]
-    #     # get model weights dict (empty)
-    #     model_dict = model.state_dict()
-    #     # align dictionaries
-    #     for key in model_dict.keys():
-    #         if key in pretrained_dict:
-    #             model_dict[key] = pretrained_dict[key]
-    #     model.load_state_dict(model_dict)
-    #     print("=> loaded checkpoint")
+
+    # load pretrained weights as initial condition
+    if restore_file is not None:
+        print("=> loading checkpoint {}".format(restore_file))
+        checkpoint = torch.load(restore_file)
+        pretrained_dict = checkpoint['state_dict']
+        model.load_state_dict(pretrained_dict)
+        print("=> loaded checkpoint")
     
     # initialize best validation loss and accuracy
     best_valid_loss, best_valid_acc = 1.e+15, 0.0
@@ -315,9 +297,10 @@ def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_
     
     # define the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=lr_init) 
-    # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=1, cooldown=2, mode='min', verbose=True)
-#     if restore_file is not None:
-#         optimizer.load_state_dict(checkpoint['optimizer'])
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.9, 
+                                  patience=1, cooldown=3, mode='min', verbose=True)
+    if restore_file is not None:
+        optimizer.load_state_dict(checkpoint['optim_dict'])
     
     # iterate over epochs
     for epoch in range(1, num_epochs+1):
@@ -327,7 +310,7 @@ def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_
         print("Epoch [{}/{}]".format(epoch, num_epochs))
         
         # train model for a whole epoc (one full pass over the training set)
-        histories_ep = train(model, dataloader_train, optimizer, loss_fn, threshold, 
+        histories_ep = train(model, dataloader_train_siam, optimizer, loss_fn, threshold, 
                              num_steps_train, batch_size, verbose=verbose)
         # update train metric histories
         loss_train_hist += histories_ep["loss train"]
@@ -336,14 +319,14 @@ def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_
         acc_avg_train_hist += histories_ep["acc avg train"]
         
         # after one epoch of training, evaluate on validation set
-        metrics_valid = evaluate(model, dataloader_valid, loss_fn, threshold, 
+        metrics_valid = evaluate(model, dataloader_valid_siam, loss_fn, threshold, 
                                  num_steps_valid, batch_size, verbose=verbose)
         # update train metric histories
         loss_valid_hist += len(histories_ep["loss train"]) * [metrics_valid["loss"]]
         acc_valid_hist += len(histories_ep["acc train"]) * [metrics_valid["acc"]]
         
         # update lr with scheduler
-        # scheduler.step(metrics_valid["loss"])
+        scheduler.step(metrics_valid["loss"])
         
         # do we have a new winner?
         is_best_loss = metrics_valid["loss"]<=best_valid_loss
@@ -355,6 +338,9 @@ def train_and_evaluate(model, dataloader_train, dataloader_valid, lr_init, loss_
             best_valid_acc = metrics_valid["acc"]
             print("- Found new best acc: {:.7f}".format(best_valid_acc))
             
+        # try prediction
+        predict(model, dataloader_train_pred, dataloader_valid_pred, mode="valid")
+        
         # save checkpoints
         print("Saving checkpoints...")
         save_checkpoint({'epoch': epoch,

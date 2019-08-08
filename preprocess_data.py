@@ -4,10 +4,7 @@ from rxrx import io as rio
 
 #import settings_model
 
-def rxrx_all():
-    print("Loading metadata...")
-    # load metadata
-    df = rio.combine_metadata().reset_index()
+def create_data_dict(df):
     # create img_id column to match image names
     df["img_id"] = df["dataset"] + "_" + df["id_code"] + "_s" + df["site"].astype("str")
     print("Metadata shape:", df.shape)
@@ -46,20 +43,42 @@ def rxrx_all():
     # calculate normalization factors by experiment
     print("Calculating normalization factors by experiment...")
     df_stats = rio._load_stats()
-    df_norm = df_stats.groupby(["experiment", "channel"])[["median", "std"]].mean().unstack().reset_index()
+    df_norm = df_stats.groupby(["experiment", "channel"])[["mean", "std"]].mean().unstack().reset_index()
     exp_norm_dict = {}
     for exp in df_norm["experiment"].values:
-        exp_norm_dict[exp] = {"median" : df_norm.loc[df_norm["experiment"]==exp, "median"].values, 
+        exp_norm_dict[exp] = {"mean" : df_norm.loc[df_norm["experiment"]==exp, "mean"].values, 
                               "std" : df_norm.loc[df_norm["experiment"]==exp, "std"].values}
     data["exp_norm_dict"] = exp_norm_dict    
-        
+
     return data
 
-def rxrx_control():
-    return None
+def rxrx_all():
+    print("Loading metadata for all images...")
+    # load metadata
+    df = rio.combine_metadata().reset_index()
+    
+    return create_data_dict(df)
+
+def rxrx_cell_type(cell_type):
+    print(f"Loading metadata for {cell_type}...")
+    # load metadata
+    df = rio.combine_metadata().reset_index()
+    # select only one cell_type
+    df = df[df["cell_type"]==cell_type]
+    
+    return create_data_dict(df)
+
+def rxrx_control_cell_type(cell_type):
+    print(f"Loading metadata for control {cell_type}...")
+    # load metadata
+    df = rio.combine_metadata().reset_index()
+    # select only one cell_type
+    df = df[(df["well_type"]=="positive_control") & (df["cell_type"]==cell_type)]
+    
+    return create_data_dict(df)
+
 
 def rxrx_treatment():
     return None
-
 
     

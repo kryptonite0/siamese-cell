@@ -1,4 +1,6 @@
 import os
+import random
+import numpy as np
 import torch
 import shutil
 from matplotlib import pyplot as plt
@@ -133,8 +135,9 @@ def get_email_credentials():
 def epoch_email_alert(output_dir):
     port = 465
     sender_email, password, receiver_email = get_email_credentials()
-
-    subject = "Recursion Kaggle model: new epoch completed!"
+    
+    model_name = output_dir.split("/")[-1]
+    subject = f"Recursion Kaggle model {model_name}: new epoch completed!"
     body = "This is an email with attachment sent from Python."
 
     # Create a multipart message and set headers
@@ -177,4 +180,11 @@ def epoch_email_alert(output_dir):
         server.login(sender_email, password)
         server.sendmail(sender_email, receiver_email, text)        
 
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
         
