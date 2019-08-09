@@ -97,8 +97,8 @@ def create_siamese_datasets_and_loaders(data, batch_size, basepath_data, origina
     transform_train = Compose([HorizontalFlip(p=0.5),
                                VerticalFlip(p=0.5),
                                Rotate(limit=180, p=1),
-                               RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
-                               Resize(original_image_size, original_image_size),
+                               # RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
+                               # Resize(original_image_size, original_image_size),
                                ToTensor()
                             ])
 
@@ -233,7 +233,7 @@ class RXRXDataset(torchDataset):
         exp = img_id.split("_")[1]
         norm = self.exp_norm_dict[exp]
         # normalize
-        img -= norm["median"] 
+        img -= norm["mean"] 
         img /= norm["std"]
         # apply augmentation
         if self.transform:
@@ -246,13 +246,14 @@ class RXRXDataset(torchDataset):
 
 def create_predict_datasets_and_loaders(data, batch_size, basepath_data, original_image_size):
     
-    transform_train = Compose([HorizontalFlip(p=0.5),
-                               VerticalFlip(p=0.5),
-                               Rotate(limit=180, p=1),
-                               RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
-                               Resize(original_image_size, original_image_size),
-                               ToTensor()
-                            ])
+    # transform_train = Compose([HorizontalFlip(p=0.5),
+    #                            VerticalFlip(p=0.5),
+    #                            Rotate(limit=180, p=1),
+    #                            RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
+    #                            Resize(original_image_size, original_image_size),
+    #                            ToTensor()
+    #                         ])
+    transform_train = Compose([ToTensor()])
     transform_valid = Compose([ToTensor()])
     transform_test = Compose([ToTensor()])
     
@@ -273,7 +274,7 @@ def create_predict_datasets_and_loaders(data, batch_size, basepath_data, origina
     # create the dataloaders
     loader_train = DataLoader(dataset=dataset_train,
                               batch_size=batch_size,
-                              shuffle=True,
+                              shuffle=False,
                               pin_memory=True,
                               num_workers=multiprocessing.cpu_count()) 
     loader_train_debug = DataLoader(dataset=dataset_train_debug,

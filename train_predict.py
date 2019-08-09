@@ -113,7 +113,7 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
     # iterate over batches    
     print(f'- Validating on {num_steps} batches of {batch_size} images each.')
     with torch.no_grad():
-        distance_list = []
+        similarity_list = []
         is_diff_list = []
         for i, data in enumerate(dataloader):
             # break loop after num_steps batches
@@ -146,26 +146,26 @@ def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size,
             acc_avg.update(acc)
             
             # debug threshold
-            distance_list += distance.tolist()
+            similarity_list += similarity.tolist()
             is_diff_list += is_diff.tolist()
             
         # debug threshold
         from matplotlib import pyplot as plt
-        distance = np.array(distance_list)
+        similarity = np.array(similarity_list)
         is_diff = np.array(is_diff_list)
         fig, ax = plt.subplots()
-        ax.hist(distance[is_diff==1], color="r", bins=len(distance)//20, alpha=0.5)
-        ax.hist(distance[is_diff==0], color="g", bins=len(distance)//20, alpha=0.5)
+        ax.hist(similarity[is_diff==1], color="r", bins=len(similarity)//20, alpha=0.5)
+        ax.hist(similarity[is_diff==0], color="g", bins=len(similarity)//20, alpha=0.5)
         plt.savefig(os.path.join(settings_model.root_path, "tmp", "dist.png"), dpi=150)
         print("- Debug threshold")
-        print("  Distance in same pairs:\n    {:.5f} +- {:.5f}"\
-              .format(distance[is_diff==0].mean(), 
-                      distance[is_diff==0].std() / len(distance[is_diff==0])))
-        print("  Distance in different pairs:\n    {:.5f} +- {:.5f}"\
-              .format(distance[is_diff==1].mean(), 
-                      distance[is_diff==1].std() / len(distance[is_diff==1])))
+        print("  Similarity in same pairs:\n    {:.5f} +- {:.5f}"\
+              .format(similarity[is_diff==0].mean(), 
+                      similarity[is_diff==0].std() / len(similarity[is_diff==0])))
+        print("  Similarity in different pairs:\n    {:.5f} +- {:.5f}"\
+              .format(similarity[is_diff==1].mean(), 
+                      similarity[is_diff==1].std() / len(similarity[is_diff==1])))
         print("  Discrepancy:\n    {:.5f}"\
-              .format(-distance[is_diff==0].mean() + distance[is_diff==1].mean()))
+              .format(-similarity[is_diff==0].mean() + similarity[is_diff==1].mean()))
 
     # log validation summary
     metrics_valid = {'loss' : loss_avg(),
@@ -223,6 +223,37 @@ def predict(model, dataloader_train, dataloader_predict, mode):
 
         print("- Accuracy (method 2) at test time:", accuracy1)
         print("- Accuracy (method 2) at test time:", accuracy2)
+
+def save_embeddings_for_clf(model, dataloader_train, dataloader_predict, output_dir): 
+    
+    # set model to evaluation mode
+    model.eval()
+    with torch.no_grad():
+        with open(os.path.join(output_dir, "emb_train.csv"), "w") as f:
+            # iterate over dataloader_train
+            for i, data in tqdm(enumerate(dataloader_train), total=len(dataloader_train)):
+                # extract variables
+                img_batch, label_batch = data
+                img_batch = img_batch.type(torch.float32).cuda()
+                # calculate embeddings for batch
+                output_batch = model.forward_once(img_batch).data.cpu().numpy()
+                # save to dataframe
+                batch_size = img_batch.size()[0]
+                for j in range(batch_size):
+                    f.write(",".join(output_batch[j].astype("str")) +","+label_batch[j]+"\n")
+        with open(os.path.join(output_dir, "emb_valid.csv"), "w") as f:
+            # iterate over dataloader_predict
+            for i, data in tqdm(enumerate(dataloader_predict), total=len(dataloader_predict)):
+                # extract variables
+                img_batch, label_batch = data
+                img_batch = img_batch.type(torch.float32).cuda()
+                # calculate embeddings for batch
+                output_batch = model.forward_once(img_batch).data.cpu().numpy()
+                # save to dataframe
+                batch_size = img_batch.size()[0]
+                for j in range(batch_size):
+                    f.write(",".join(output_batch[j].astype("str")) +","+label_batch[j]+"\n")
+                
 
 def filter_soft_hard_pairs(model, data):
     start = time.time()

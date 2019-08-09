@@ -33,18 +33,18 @@ def main(data, model_id):
     verbose = True
     # model = siamese_resnet18(pretrained=True).cuda()
     # model = siamese_resnet101(pretrained=True, embedding_size=128).cuda()
-    restore_file = None
+    # restore_file = None
     # model = siamese_resnet50(pretrained=True, embedding_size=128).cuda()
     # model = siamese_resnet50(pretrained=False, embedding_size=128).cuda()
-    # restore_file = "/jet/prs/workspace/models/siamese-cell/HEPG2_20190807_173841/loss.best.pth.tar"
+    restore_file = "/jet/prs/workspace/models/siamese-cell/HEPG2_20190808_173143/loss.best.pth.tar"
     model = SiameseEfficientNet.from_pretrained('efficientnet-b0').cuda()
     # loss_fn = ContrastiveLoss(margin=2.)
     loss_fn = CosineSimilarityLoss(margin=0.5)
     lr_init = 3.e-4
-    threshold = 0.8
-    num_epochs = 10
-    num_steps_train = 100#int(len(loaders_siam["train"]))
-    num_steps_valid = 100#int(len(loaders_siam["valid"]))
+    threshold = 1. - 1.e-9
+    num_epochs = 100
+    num_steps_train = int(len(loaders_siam["train"]))
+    num_steps_valid = int(len(loaders_siam["valid"]))
     output_dir = os.path.join(settings_model.root_path, "models", "siamese-cell",
                               model_id + "_" + datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
     print("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n")
@@ -57,15 +57,26 @@ def main(data, model_id):
                        num_steps_train, num_steps_valid, settings_model.batch_size, 
                        output_dir, verbose=verbose, restore_file=restore_file)
 
+def embeddings(data):
+    datasets_pred, loaders_pred = create_predict_datasets_and_loaders(data, settings_model.batch_size, 
+                                                                      settings_model.basepath_data, 
+                                                                      settings_model.original_image_size)
+    restore_file = "/jet/prs/workspace/models/siamese-cell/HEPG2_20190808_173143/loss.best.pth.tar"
+    model = SiameseEfficientNet.from_pretrained('efficientnet-b0').cuda()
+    output_dir = os.path.join(settings_model.root_path, "models", "siamese-cell",
+                              "HEPG2_20190808_173143")
+    
+    save_embeddings_for_clf(model, loaders_pred["train"], loaders_pred["valid"], output_dir)
+    
 if __name__ == "__main__":
     # preprocess data
     # data = preprocess_data.rxrx_all()
     # main(data, "all")
     
-    # 'HEPG2', 'HUVEC', 'RPE', 'U2OS'
+    # # 'HEPG2', 'HUVEC', 'RPE', 'U2OS'
     cell_type = 'HEPG2'
-    # data = preprocess_data.rxrx_control_cell_type(cell_type)
+    # # data = preprocess_data.rxrx_control_cell_type(cell_type)
     data = preprocess_data.rxrx_cell_type(cell_type)
-    main(data, cell_type)
+    # main(data, cell_type)
     
-    
+    embeddings(data)
