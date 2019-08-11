@@ -246,14 +246,14 @@ class RXRXDataset(torchDataset):
 
 def create_predict_datasets_and_loaders(data, batch_size, basepath_data, original_image_size):
     
-    # transform_train = Compose([HorizontalFlip(p=0.5),
-    #                            VerticalFlip(p=0.5),
-    #                            Rotate(limit=180, p=1),
-    #                            RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
-    #                            Resize(original_image_size, original_image_size),
-    #                            ToTensor()
-    #                         ])
-    transform_train = Compose([ToTensor()])
+    transform_train = Compose([HorizontalFlip(p=0.5),
+                               VerticalFlip(p=0.5),
+                               Rotate(limit=180, p=1),
+                               # RandomCrop(int(0.66*original_image_size), int(0.66*original_image_size)),
+                               # Resize(original_image_size, original_image_size),
+                               ToTensor()
+                            ])
+    # transform_train = Compose([ToTensor()])
     transform_valid = Compose([ToTensor()])
     transform_test = Compose([ToTensor()])
     

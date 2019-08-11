@@ -227,7 +227,7 @@ def _siamese_resnet(arch, block, layers, pretrained, progress, **kwargs):
         for key in ["conv1.weight", "fc.weight", "fc.bias"]:
             pretrained_dict[key] = model_dict[key]
         model.load_state_dict(pretrained_dict)
-        print("=> loaded Imagenets pretrained weights (where possible)")
+        print("=> loaded Imagenet pretrained weights (where possible)")
         
     return model
 

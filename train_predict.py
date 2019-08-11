@@ -19,7 +19,7 @@ from utils import *
 import settings_model
         
 def train(model, dataloader, optimizer, loss_fn, threshold, num_steps, 
-          batch_size, verbose=False, save_summary_steps=5, seed=42):
+          batch_size, scheduler, verbose=False, save_summary_steps=5, seed=42):
     # set model to training mode
     model.train()    
     # create running averages
@@ -54,6 +54,8 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
         optimizer.step()
         # update loss running average
         loss_avg.update(loss.item())
+        # update lr with scheduler
+        scheduler.step(loss.item())
         # update loss history
         loss_hist_ep.append(loss.item())
         loss_avg_hist_ep.append(loss_avg())
@@ -99,7 +101,7 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
                     "acc train" : acc_hist_ep,
                     "acc avg train" : acc_avg_hist_ep}
     
-    return histories_ep
+    return histories_ep, scheduler
 
 def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size, 
              verbose=False, seed=42):
@@ -226,21 +228,26 @@ def predict(model, dataloader_train, dataloader_predict, mode):
 
 def save_embeddings_for_clf(model, dataloader_train, dataloader_predict, output_dir): 
     
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
     # set model to evaluation mode
     model.eval()
     with torch.no_grad():
         with open(os.path.join(output_dir, "emb_train.csv"), "w") as f:
-            # iterate over dataloader_train
-            for i, data in tqdm(enumerate(dataloader_train), total=len(dataloader_train)):
-                # extract variables
-                img_batch, label_batch = data
-                img_batch = img_batch.type(torch.float32).cuda()
-                # calculate embeddings for batch
-                output_batch = model.forward_once(img_batch).data.cpu().numpy()
-                # save to dataframe
-                batch_size = img_batch.size()[0]
-                for j in range(batch_size):
-                    f.write(",".join(output_batch[j].astype("str")) +","+label_batch[j]+"\n")
+            # augment dataloader train 10 different ways:
+            for k in range(10):
+                print(f"Train augmentation #{k}...")
+                # iterate over dataloader_train
+                for i, data in tqdm(enumerate(dataloader_train), total=len(dataloader_train)):
+                    # extract variables
+                    img_batch, label_batch = data
+                    img_batch = img_batch.type(torch.float32).cuda()
+                    # calculate embeddings for batch
+                    output_batch = model.forward_once(img_batch).data.cpu().numpy()
+                    # save to dataframe
+                    batch_size = img_batch.size()[0]
+                    for j in range(batch_size):
+                        f.write(",".join(output_batch[j].astype("str")) +","+label_batch[j]+"\n")
         with open(os.path.join(output_dir, "emb_valid.csv"), "w") as f:
             # iterate over dataloader_predict
             for i, data in tqdm(enumerate(dataloader_predict), total=len(dataloader_predict)):
@@ -329,9 +336,9 @@ def train_and_evaluate(model, dataloader_train_siam, dataloader_valid_siam,
     # define the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=lr_init) 
     scheduler = ReduceLROnPlateau(optimizer, factor=0.9, 
-                                  patience=1, cooldown=3, mode='min', verbose=True)
-    if restore_file is not None:
-        optimizer.load_state_dict(checkpoint['optim_dict'])
+                                  patience=10, cooldown=10, mode='min', verbose=True)
+    # if restore_file is not None:
+    #     optimizer.load_state_dict(checkpoint['optim_dict'])
     
     # iterate over epochs
     for epoch in range(1, num_epochs+1):
@@ -340,9 +347,15 @@ def train_and_evaluate(model, dataloader_train_siam, dataloader_valid_siam,
         print("\n======================================================")
         print("Epoch [{}/{}]".format(epoch, num_epochs))
         
+        # # unfreeze all layers after first epoch
+        # if epoch == 2:
+        #     print("Unfreezing all layers...")
+        #     for param in model.parameters():
+        #         param.requires_grad = True
+
         # train model for a whole epoc (one full pass over the training set)
-        histories_ep = train(model, dataloader_train_siam, optimizer, loss_fn, threshold, 
-                             num_steps_train, batch_size, verbose=verbose)
+        histories_ep, scheduler = train(model, dataloader_train_siam, optimizer, loss_fn, threshold, 
+                             num_steps_train, batch_size, scheduler, verbose=verbose)
         # update train metric histories
         loss_train_hist += histories_ep["loss train"]
         loss_avg_train_hist += histories_ep["loss avg train"]
@@ -356,8 +369,8 @@ def train_and_evaluate(model, dataloader_train_siam, dataloader_valid_siam,
         loss_valid_hist += len(histories_ep["loss train"]) * [metrics_valid["loss"]]
         acc_valid_hist += len(histories_ep["acc train"]) * [metrics_valid["acc"]]
         
-        # update lr with scheduler
-        scheduler.step(metrics_valid["loss"])
+        # # update lr with scheduler
+        # scheduler.step(metrics_valid["loss"])
         
         # do we have a new winner?
         is_best_loss = metrics_valid["loss"]<=best_valid_loss
