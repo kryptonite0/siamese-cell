@@ -19,7 +19,7 @@ from utils import *
 import settings_model
         
 def train(model, dataloader, optimizer, loss_fn, threshold, num_steps, 
-          batch_size, scheduler, verbose=False, save_summary_steps=5, seed=42):
+          batch_size, scheduler, verbose=False, save_summary_steps=5, split_batch=0):
     # set model to training mode
     model.train()    
     # create running averages
@@ -41,17 +41,43 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
         data = filter_soft_hard_pairs(model, data)
         # extract variables    
         img_batch1, img_batch2, is_diff_batch, label_batch1, label_batch2 = data
-        img_batch1 = img_batch1.type(torch.float32).cuda()
-        img_batch2 = img_batch2.type(torch.float32).cuda()
-        is_diff_batch = is_diff_batch.type(torch.float32).cuda()
-        # compute output
-        optimizer.zero_grad()
-        output_batch1, output_batch2 = model(img_batch1, img_batch2)
-        # compute loss
-        loss = loss_fn(output_batch1, output_batch2, is_diff_batch)
-        # compute gradient and do optimizer step
-        loss.backward()
-        optimizer.step()
+        
+        if split_batch>0:
+            batch_size = img_batch1.size()[0]
+            split_batch_size = batch_size // split_batch
+            loss = 0
+            output_batch1, output_batch2 = [], []
+            optimizer.zero_grad()
+            for split_idx in range(split_batch):
+                img_batch1_split = img_batch1[split_idx*split_batch_size : (split_idx+1)*split_batch_size]\
+                                    .type(torch.float32).cuda()
+                img_batch2_split = img_batch2[split_idx*split_batch_size : (split_idx+1)*split_batch_size]\
+                                    .type(torch.float32).cuda()
+                is_diff_batch_split = is_diff_batch[split_idx*split_batch_size : (split_idx+1)*split_batch_size]\
+                                    .type(torch.float32).cuda()
+                output_batch1_split, output_batch2_split = model(img_batch1_split, img_batch2_split)
+                output_batch1.append(output_batch1_split)
+                output_batch2.append(output_batch2_split)
+                loss_split = loss_fn(output_batch1_split, output_batch2_split, is_diff_batch_split) / split_batch
+                loss_split.backward()
+                loss += loss_split
+            optimizer.step()
+            output_batch1 = torch.cat(output_batch1, dim=0)
+            output_batch2 = torch.cat(output_batch2, dim=0)
+            
+        else:
+            img_batch1 = img_batch1.type(torch.float32).cuda()
+            img_batch2 = img_batch2.type(torch.float32).cuda()
+            is_diff_batch = is_diff_batch.type(torch.float32).cuda()
+            # compute output
+            optimizer.zero_grad()
+            output_batch1, output_batch2 = model(img_batch1, img_batch2)
+            # compute loss
+            loss = loss_fn(output_batch1, output_batch2, is_diff_batch)
+            # compute gradient and do optimizer step
+            loss.backward()
+            optimizer.step()
+            
         # update loss running average
         loss_avg.update(loss.item())
         # update lr with scheduler
@@ -104,7 +130,7 @@ def train(model, dataloader, optimizer, loss_fn, threshold, num_steps,
     return histories_ep, scheduler
 
 def evaluate(model, dataloader, loss_fn, threshold, num_steps, batch_size, 
-             verbose=False, seed=42):
+             verbose=False):
     # set model to evaluation mode
     model.eval()
     # create running averages
@@ -317,7 +343,7 @@ def train_and_evaluate(model, dataloader_train_siam, dataloader_valid_siam,
                        dataloader_train_pred, dataloader_valid_pred, 
                        lr_init, loss_fn, threshold,
                        num_epochs, num_steps_train, num_steps_valid, 
-                       batch_size, output_dir, verbose=False, restore_file=None, seed=42):
+                       batch_size, output_dir, verbose=False, restore_file=None, split_batch=0):
 
     # load pretrained weights as initial condition
     if restore_file is not None:
@@ -355,7 +381,7 @@ def train_and_evaluate(model, dataloader_train_siam, dataloader_valid_siam,
 
         # train model for a whole epoc (one full pass over the training set)
         histories_ep, scheduler = train(model, dataloader_train_siam, optimizer, loss_fn, threshold, 
-                             num_steps_train, batch_size, scheduler, verbose=verbose)
+                             num_steps_train, batch_size, scheduler, verbose=verbose, split_batch=split_batch)
         # update train metric histories
         loss_train_hist += histories_ep["loss train"]
         loss_avg_train_hist += histories_ep["loss avg train"]

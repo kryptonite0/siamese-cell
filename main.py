@@ -32,14 +32,11 @@ def main(data, model_id):
 
     # define training parameters
     verbose = True
-    # model = siamese_resnet18(pretrained=True).cuda()
-    # model = siamese_resnet101(pretrained=True, embedding_size=128).cuda()
-    restore_file = None
-    # model = siamese_resnet50(pretrained=True, embedding_size=128).cuda()
-    # model = siamese_resnet50(pretrained=False, embedding_size=128).cuda()
-    # restore_file = "/jet/prs/workspace/models/siamese-cell/HUVEC_20190810_202545/loss.best.pth.tar"
+    # restore_file = None
+    restore_file = "/jet/prs/workspace/models/siamese-cell/HEPG2_20190811_142600/loss.best.pth.tar"
     # model = SiameseEfficientNet.from_pretrained('efficientnet-b0').cuda()
-    model = siamese_densenet121(pretrained=True, embedding_size=128, drop_rate=0.3).cuda()
+    model = siamese_densenet121(pretrained=False, embedding_size=128, drop_rate=0.3).cuda()
+    split_batch = 4
     # for param in model.parameters():
     #     param.requires_grad = False
     # for param in model.features.conv0.parameters():
@@ -63,7 +60,8 @@ def main(data, model_id):
                        loaders_pred["train"], loaders_pred["valid"], 
                        lr_init, loss_fn, threshold, num_epochs, 
                        num_steps_train, num_steps_valid, settings_model.batch_size, 
-                       output_dir, verbose=verbose, restore_file=restore_file)
+                       output_dir, verbose=verbose, restore_file=restore_file, 
+                       split_batch=split_batch)
 
 def embeddings(data, model_id):
     datasets_pred, loaders_pred = create_predict_datasets_and_loaders(data, settings_model.batch_size, 
@@ -82,11 +80,11 @@ if __name__ == "__main__":
     # main(data, "all")
     
     # # 'HEPG2', 'HUVEC', 'RPE', 'U2OS'
-    cell_type = 'RPE' #'HEPG2' #'HUVEC'
+    cell_type = 'HEPG2' 
     # # data = preprocess_data.rxrx_control_cell_type(cell_type)
     data = preprocess_data.rxrx_cell_type(cell_type)
     main(data, cell_type)
-    # embeddings(data, "HEPG2_20190811_142600")
+    # embeddings(data, "U2OS_20190812_073705")
     
     
     
