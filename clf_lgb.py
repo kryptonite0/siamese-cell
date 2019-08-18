@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import time
+import pickle
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 import warnings
@@ -25,12 +26,6 @@ class color:
     UNDERLINE = '\033[4m'
     END = '\033[0m'
     
-
-# def accuracy(preds, train_data):
-#     labels = train_data.get_label()
-#     pred = np.argmax(preds.reshape(n_classes, len(preds)//n_classes), axis=0)
-#     return 'accuracy', np.mean(labels == pred), True
-
 def lgbm_evaluate(**params):
     start = time.time()
     params['num_leaves'] = int(params['num_leaves'])
@@ -48,12 +43,20 @@ def lgbm_evaluate(**params):
                         (df_valid[features].values, df_valid["TARGET"].values)],
             early_stopping_rounds=10, verbose=0)
     
-#     train_preds = clf.predict_proba(df_train[features].values, num_iteration=clf.best_iteration_)
+    # train_preds = clf.predict_proba(df_train[features].values, num_iteration=clf.best_iteration_)
     valid_preds = clf.predict_proba(df_valid[features].values, num_iteration=clf.best_iteration_)
     
 #     print('Accuracy train {:.6f}'.format(sum(np.argmax(train_preds, axis=1) == df_train['TARGET'].values) / float(len(train_preds))))
     acc_valid = np.mean(np.argmax(valid_preds, axis=1) == df_valid['TARGET'].values)
-        
+    
+    timestamp = time.time()
+    with open(os.path.join(output_dir, f"clf_{acc_valid}_{timestamp}.p"), "wb") as fp:
+        pickle.dump(clf, fp, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(os.path.join(output_dir, f"params_{acc_valid}_{timestamp}.p"), "wb") as fp:
+        pickle.dump(params, fp, protocol=pickle.HIGHEST_PROTOCOL)        
+    with open(os.path.join(output_dir, f"preds_valid_{acc_valid}_{timestamp}.npy"), "wb") as fp:
+        np.save(fp, params)
+           
     return acc_valid
 
 def optimize_lgbm():
@@ -77,7 +80,6 @@ def optimize_lgbm():
     best_params['num_leaves'] = int(best_params['num_leaves'])
     best_params['max_depth'] = int(best_params['max_depth'])
     
-    
     print("Best validation acc: {}".format(best_acc))
     print('Best parameters found by optimization:\n')
     for k, v in best_params.items():
@@ -85,19 +87,32 @@ def optimize_lgbm():
         
     return best_acc, best_params
 
-# model_id = "HUVEC_20190810_202545"
-model_id = "HEPG2_20190811_142600"
-print(model_id)
-output_dir = os.path.join(settings_model.root_path, "models", "siamese-cell",
-                          f"{model_id}", "emb")
+def main(model_id):
+    print("\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n")
+    print(model_id)
+    print("\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n")
 
-df_train = pd.read_csv(os.path.join(output_dir, "emb_train.csv"), header=None)
-df_valid = pd.read_csv(os.path.join(output_dir, "emb_valid.csv"), header=None)
-df_train.columns = df_train.columns.tolist()[:-1] + ["TARGET"]
-df_valid.columns = df_valid.columns.tolist()[:-1] + ["TARGET"]
+    global output_dir
+    output_dir = os.path.join(settings_model.root_path, "models", "siamese-cell",
+                              f"{model_id}", "emb")
+    global df_train
+    global df_valid
+    df_train = pd.read_csv(os.path.join(output_dir, "emb_train.csv"), header=None)
+    df_valid = pd.read_csv(os.path.join(output_dir, "emb_valid.csv"), header=None)
+    df_train.columns = df_train.columns.tolist()[:-1] + ["TARGET"]
+    df_valid.columns = df_valid.columns.tolist()[:-1] + ["TARGET"]
+    global features
+    global n_classes
+    global labels_valid
+    features = df_train.columns.tolist()[:-1]
+    n_classes = df_train["TARGET"].nunique()
+    labels_valid = df_valid["TARGET"].unique()
 
-features = df_train.columns.tolist()[:-1]
-n_classes = df_train["TARGET"].nunique()
-labels_valid = df_valid["TARGET"].unique()
+    best_acc, best_params = optimize_lgbm()
+    
+if __name__ == "__main__":
+    
+    for model_id in ["U2OS_20190817_192038", "RPE_20190817_022451", 
+                     "HEPG2_20190816_092727", "HUVEC_20190812_211524"]:
+        main(model_id)
 
-best_acc, best_params = optimize_lgbm()
